@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Readback Pulse & ISI Demo</title>
+<style>
+  :root{
+    --bg: #0c1210;
+    --panel: #121a17;
+    --grid: #1e2b26;
+    --phosphor: #5cf29a;
+    --phosphor-dim: #2f7a56;
+    --amber: #f2b45c;
+    --amber-dim: #8a6428;
+    --ink: #cfe8dc;
+    --ink-dim: #7fa393;
+    --red: #f26c5c;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family: 'IBM Plex Mono', 'Courier New', monospace;
+    padding:18px 16px 28px;
+  }
+  .wrap{max-width:900px;margin:0 auto;}
+  .hdr{
+    display:flex; justify-content:space-between; align-items:baseline;
+    border-bottom:1px solid var(--grid); padding-bottom:10px; margin-bottom:14px;
+    flex-wrap:wrap; gap:6px;
+  }
+  .hdr h1{
+    font-size:15px; letter-spacing:0.14em; text-transform:uppercase;
+    color:var(--phosphor); margin:0; font-weight:600;
+  }
+  .hdr .sub{font-size:11px; color:var(--ink-dim); letter-spacing:0.05em;}
+  .scope{
+    background: radial-gradient(ellipse at 50% 0%, #0f1a16 0%, #0a0f0d 100%);
+    border:1px solid var(--grid);
+    border-radius:6px;
+    padding:8px;
+    position:relative;
+  }
+  canvas{display:block; width:100%; height:340px; border-radius:3px;}
+  .readout{
+    display:flex; gap:18px; font-size:11px; color:var(--ink-dim);
+    padding:8px 4px 2px; flex-wrap:wrap; letter-spacing:0.03em;
+  }
+  .readout b{color:var(--amber); font-weight:600;}
+  .readout span{white-space:nowrap;}
+  .panel{
+    background:var(--panel); border:1px solid var(--grid); border-radius:6px;
+    padding:14px 16px; margin-top:14px;
+  }
+  .row{
+    display:grid; grid-template-columns:150px 1fr 60px; align-items:center;
+    gap:10px; margin-bottom:12px;
+  }
+  .row label{font-size:11px; color:var(--ink-dim); letter-spacing:0.04em;}
+  .row .val{font-size:12px; color:var(--phosphor); text-align:right;}
+  input[type=range]{
+    -webkit-appearance:none; width:100%; height:3px; background:var(--grid);
+    border-radius:2px; outline:none;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; width:12px; height:12px; border-radius:50%;
+    background:var(--phosphor); cursor:pointer; border:2px solid #0c1210;
+    box-shadow:0 0 6px var(--phosphor-dim);
+  }
+  input[type=range]::-moz-range-thumb{
+    width:12px; height:12px; border-radius:50%;
+    background:var(--phosphor); cursor:pointer; border:2px solid #0c1210;
+  }
+  .bitrow{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:4px;}
+  .bitrow label{font-size:11px; color:var(--ink-dim); letter-spacing:0.04em; width:150px; flex-shrink:0;}
+  .bits{display:flex; gap:6px; flex-wrap:wrap;}
+  .bit{
+    width:26px; height:26px; border:1px solid var(--grid); border-radius:4px;
+    display:flex; align-items:center; justify-content:center;
+    font-size:12px; cursor:pointer; user-select:none;
+    background:#0e1512; color:var(--ink-dim); transition:all .12s;
+  }
+  .bit.on{background:var(--amber-dim); color:var(--amber); border-color:var(--amber-dim);}
+  .toggles{display:flex; gap:16px; margin-top:10px; flex-wrap:wrap;}
+  .tgl{display:flex; align-items:center; gap:6px; font-size:11px; color:var(--ink-dim); cursor:pointer;}
+  .tgl input{accent-color:var(--phosphor); cursor:pointer;}
+  .legend{display:flex; gap:16px; font-size:10px; color:var(--ink-dim); margin-top:8px; flex-wrap:wrap;}
+  .legend .sw{display:inline-block; width:14px; height:2px; margin-right:5px; vertical-align:middle;}
+  .note{font-size:11px; color:var(--ink-dim); line-height:1.6; margin-top:10px; border-top:1px solid var(--grid); padding-top:10px;}
+  .note b{color:var(--ink);}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="hdr">
+    <h1>Readback Pulse &amp; Linear Superposition</h1>
+    <div class="sub">Lorentzian isolated pulse model — PR channel front end</div>
+  </div>
+
+  <div class="scope">
+    <canvas id="cv"></canvas>
+  </div>
+  <div class="readout" id="readout"></div>
+
+  <div class="panel">
+    <div class="row">
+      <label>PW50 / T ratio</label>
+      <input type="range" id="pw50" min="0.6" max="3.0" step="0.02" value="1.6">
+      <div class="val" id="pw50v"></div>
+    </div>
+    <div class="row">
+      <label>Bit period T (ns)</label>
+      <input type="range" id="T" min="0.4" max="2.0" step="0.02" value="1.0">
+      <div class="val" id="Tv"></div>
+    </div>
+    <div class="row">
+      <label>Electronic noise σ</label>
+      <input type="range" id="noise" min="0" max="0.25" step="0.005" value="0">
+      <div class="val" id="noisev"></div>
+    </div>
+
+    <div class="bitrow">
+      <label>Data pattern (click to flip)</label>
+      <div class="bits" id="bits"></div>
+    </div>
+
+    <div class="toggles">
+      <label class="tgl"><input type="checkbox" id="showIndiv" checked> show individual pulses</label>
+      <label class="tgl"><input type="checkbox" id="showSamples" checked> show sample points (t = nT)</label>
+      <label class="tgl"><input type="checkbox" id="autoISI"> flag ISI-corrupted samples</label>
+    </div>
+
+    <div class="legend">
+      <span><i class="sw" style="background:var(--phosphor)"></i>superposed readback signal</span>
+      <span><i class="sw" style="background:var(--amber-dim)"></i>individual bit pulses</span>
+      <span><i class="sw" style="background:var(--red)"></i>ISI-flipped sample</span>
+    </div>
+
+    <div class="note">
+      Each written '1' transition contributes an isolated Lorentzian pulse
+      <b>V(x) = V0 / (1 + (2x/PW50)²)</b>. The channel output is the
+      <b>linear superposition</b> of every pulse in the sequence. As PW50/T grows,
+      neighboring pulses overlap and distort the amplitude sampled at each bit
+      center — that's <b>inter-symbol interference (ISI)</b>. Try pushing PW50/T
+      above ~2 with an alternating <b>101010</b> pattern to see samples drop toward
+      zero, or a lone <b>1</b> in a sea of zeros to see the isolated pulse recover cleanly.
+    </div>
+  </div>
+
+</div>
+
+<script>
+const canvas = document.getElementById('cv');
+const ctx = canvas.getContext('2d');
+const bitsEl = document.getElementById('bits');
+
+let bits = [0,0,1,0,0,1,1,0,1,0,0,0,1,1,0,0];
+
+function buildBits(){
+  bitsEl.innerHTML = '';
+  bits.forEach((b,i)=>{
+    const d = document.createElement('div');
+    d.className = 'bit' + (b ? ' on' : '');
+    d.textContent = b;
+    d.onclick = ()=>{ bits[i] = bits[i]?0:1; buildBits(); draw(); };
+    bitsEl.appendChild(d);
+  });
+}
+buildBits();
+
+function resize(){
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * devicePixelRatio;
+  canvas.height = 340 * devicePixelRatio;
+  ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+}
+window.addEventListener('resize', ()=>{resize(); draw();});
+
+const pw50El = document.getElementById('pw50');
+const TEl = document.getElementById('T');
+const noiseEl = document.getElementById('noise');
+const showIndivEl = document.getElementById('showIndiv');
+const showSamplesEl = document.getElementById('showSamples');
+const autoISIEl = document.getElementById('autoISI');
+
+[pw50El, TEl, noiseEl, showIndivEl, showSamplesEl, autoISIEl].forEach(el=>{
+  el.addEventListener('input', draw);
+});
+
+function lorentz(x, PW50){
+  return 1/(1 + Math.pow(2*x/PW50, 2));
+}
+
+function gaussianNoise(sigma){
+  let u=0,v=0;
+  while(u===0) u = Math.random();
+  while(v===0) v = Math.random();
+  return sigma * Math.sqrt(-2*Math.log(u)) * Math.cos(2*Math.PI*v);
+}
+
+let noiseTrace = null;
+
+function draw(){
+  resize();
+  const w = canvas.getBoundingClientRect().width;
+  const h = 340;
+  const PW50T = parseFloat(pw50El.value);
+  const T = parseFloat(TEl.value);
+  const PW50 = PW50T * T;
+  const sigma = parseFloat(noiseEl.value);
+
+  pw50El.nextElementSibling.textContent = PW50T.toFixed(2);
+  TEl.nextElementSibling.textContent = T.toFixed(2) + ' ns';
+  noiseEl.nextElementSibling.textContent = sigma.toFixed(3);
+
+  ctx.clearRect(0,0,w,h);
+
+  // layout
+  const padL = 44, padR = 16, padT = 16, padB = 30;
+  const plotW = w - padL - padR;
+  const plotH = h - padT - padB;
+
+  const n = bits.length;
+  const tMin = -0.5*T, tMax = (n-0.5)*T;
+  const xToPx = t => padL + (t - tMin)/(tMax - tMin) * plotW;
+
+  const vMax = 1.15, vMin = -1.15;
+  const yToPx = v => padT + (vMax - v)/(vMax - vMin) * plotH;
+
+  // grid
+  ctx.strokeStyle = '#1e2b26';
+  ctx.lineWidth = 1;
+  for(let i=0;i<=n;i++){
+    const x = xToPx((i-0.5)*T);
+    ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, padT+plotH); ctx.stroke();
+  }
+  ctx.strokeStyle = '#2a3a33';
+  const zeroY = yToPx(0);
+  ctx.beginPath(); ctx.moveTo(padL, zeroY); ctx.lineTo(padL+plotW, zeroY); ctx.stroke();
+
+  // axis labels (bit indices)
+  ctx.fillStyle = '#5c7c6d';
+  ctx.font = '10px monospace';
+  ctx.textAlign = 'center';
+  for(let i=0;i<n;i++){
+    ctx.fillText(i, xToPx(i*T), padT+plotH+16);
+  }
+  ctx.fillStyle = '#7fa393';
+  ctx.textAlign = 'right';
+  ctx.font = '10px monospace';
+  [1,0.5,0,-0.5,-1].forEach(v=>{
+    ctx.fillText(v.toFixed(1), padL-8, yToPx(v)+3);
+  });
+
+  // sample points array
+  const samples = new Array(n).fill(0);
+
+  // precompute noise trace (persist unless regenerated by pattern/bit changes—simplify: regenerate every draw but seeded smoothly is complex; just regenerate)
+  const NPTS = 600;
+  const xs = [];
+  for(let i=0;i<=NPTS;i++){
+    xs.push(tMin + (tMax-tMin)*i/NPTS);
+  }
+  const noiseSamples = xs.map(()=> sigma>0 ? gaussianNoise(sigma) : 0);
+
+  function sumAt(t){
+    let s = 0;
+    for(let i=0;i<n;i++){
+      if(bits[i]) s += lorentz(t - i*T, PW50);
+    }
+    return s;
+  }
+
+  // individual pulses (amber, dim)
+  if(showIndivEl.checked){
+    ctx.strokeStyle = '#8a6428';
+    ctx.lineWidth = 1;
+    for(let i=0;i<n;i++){
+      if(!bits[i]) continue;
+      ctx.beginPath();
+      for(let k=0;k<=NPTS;k++){
+        const t = xs[k];
+        const v = lorentz(t - i*T, PW50);
+        const px = xToPx(t), py = yToPx(v);
+        if(k===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+      }
+      ctx.stroke();
+    }
+  }
+
+  // superposed signal (phosphor green) with glow
+  ctx.save();
+  ctx.shadowColor = '#5cf29a';
+  ctx.shadowBlur = 6;
+  ctx.strokeStyle = '#5cf29a';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for(let k=0;k<=NPTS;k++){
+    const t = xs[k];
+    const v = sumAt(t) + noiseSamples[k];
+    const px = xToPx(t), py = yToPx(v);
+    if(k===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+  }
+  ctx.stroke();
+  ctx.restore();
+
+  // sample points
+  for(let i=0;i<n;i++){
+    samples[i] = sumAt(i*T);
+  }
+
+  if(showSamplesEl.checked){
+    for(let i=0;i<n;i++){
+      const px = xToPx(i*T), py = yToPx(samples[i]);
+      const expected = bits[i] ? 1 : 0;
+      // simple ISI flag: sign/threshold mismatch at 0.5 slicing level
+      const decided = samples[i] > 0.5 ? 1 : 0;
+      const flagged = autoISIEl.checked && decided !== bits[i];
+      ctx.beginPath();
+      ctx.arc(px, py, 4, 0, Math.PI*2);
+      ctx.fillStyle = flagged ? '#f26c5c' : '#f2b45c';
+      ctx.fill();
+      if(flagged){
+        ctx.strokeStyle = '#f26c5c';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(px, py, 7, 0, Math.PI*2);
+        ctx.stroke();
+      }
+    }
+  }
+
+  // readout
+  const ro = document.getElementById('readout');
+  const errCount = samples.reduce((acc,s,i)=> acc + ((s>0.5?1:0)!==bits[i]?1:0), 0);
+  ro.innerHTML =
+    `<span>PW50 = <b>${PW50.toFixed(2)} ns</b></span>` +
+    `<span>Density (PW50/T) = <b>${PW50T.toFixed(2)}</b></span>` +
+    `<span>Sample errors (0.5 slicer) = <b>${errCount}</b> / ${n}</span>`;
+}
+
+draw();
+</script>
+</body>
+</html>
